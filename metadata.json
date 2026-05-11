@@ -1,0 +1,6 @@
+{
+  "name": "StockAuto - Automation Update Stok",
+  "description": "Platform otomatisasi update stok untuk berbagai marketplace (Halodoc, Tokopedia, TikTok) dengan integrasi Google Sheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
