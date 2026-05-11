@@ -27,7 +27,7 @@ export default function App() {
 
   const handleAdminLogin = () => {
     // Simple demo password
-    if (password === 'admin123') {
+    if (password === 'Ecommerce1*') {
       setIsAdmin(true);
       setShowAdminPanel(true);
       setIsLoginOpen(false);
