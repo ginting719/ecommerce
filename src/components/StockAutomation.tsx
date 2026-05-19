@@ -8,7 +8,7 @@ import { Upload, FileText, CheckCircle2, AlertCircle, Download, Loader2, Refresh
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { fetchInventoryData, logToSpreadsheet, processHalodocStock, processTokopediaStock, getStoresFromStock, InventoryData } from '@/src/services/stockService';
+import { fetchInventoryData, logToSpreadsheet, processHalodocStock, getStoresFromStock, InventoryData } from '@/src/services/stockService';
 
 export default function StockAutomation() {
   const [selectedStore, setSelectedStore] = useState<StoreType | ''>('');
@@ -74,8 +74,6 @@ export default function StockAutomation() {
       // 3. Process based on store
       if (selectedStore === 'halodoc') {
         blobContent = processHalodocStock(fileText, inventory, selectedStockCol);
-      } else if (selectedStore === 'tokopedia_tiktok') {
-        blobContent = processTokopediaStock(fileText, inventory, selectedStockCol);
       } else {
         throw new Error('Store tidak dikenal');
       }
@@ -157,7 +155,7 @@ export default function StockAutomation() {
           Automation <span className="text-brand-600">Update Stok</span>
         </h1>
         <p className="text-slate-500 text-lg max-w-xl mx-auto leading-relaxed">
-          Update stok Halodoc dan tokopedia tiktok dari template asal platform terkait
+          Update stok Halodoc dari template asal platform terkait
         </p>
       </div>
 

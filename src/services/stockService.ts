@@ -7,7 +7,7 @@ export interface InventoryData {
   log?: any[][];
 }
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby5BpmcGqqB7JOGCj1th-LZ7aPSxdHcNOquk2dMeF2rudxMsOsgkth7LfRN9GSq-df47Q/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzAWFww9sKMDMcKDD4DPGZRU5TVe5WAnpJJSi9kRfwu5ypG0Ts6d5xXyTmvSn9oL6LZ-A/exec";
 
 export const fetchInventoryData = async (retries = 12, delay = 2500): Promise<InventoryData> => {
   try {
@@ -153,21 +153,30 @@ const getMappings = (inventory: InventoryData, storeSelection: { colIndex: numbe
     let shouldInclude = false;
 
     if (isNameBased) {
-      // Filter by Store Name in Col A (index 0)
-      if (String(row[0] || '').trim() === storeSelection.name) {
+      // Filter by Store Name in Col A (index 0) - Trimmed and case-insensitive matching
+      const rowStoreName = String(row[0] || '').trim().toLowerCase();
+      const targetStoreName = String(storeSelection.name || '').trim().toLowerCase();
+      if (rowStoreName === targetStoreName) {
         itemCode = row[2]; // ITEM CODE is index 2 (Col C)
-        stok = parseFloat(row[4]) || 0; // STOK is index 4 (Col E)
+        const valStr = String(row[4] || '').replace(',', '.');
+        stok = parseFloat(valStr) || 0; // STOK is index 4 (Col E)
+        if (stok < 0) stok = 0; // Auto convert negative stock to 0
         shouldInclude = true;
       }
     } else {
       // Column-based: Col B (index 1) is Item Code, selected col is Stok
       itemCode = row[1];
-      stok = parseFloat(row[storeSelection.colIndex]) || 0;
+      const valStr = String(row[storeSelection.colIndex] || '').replace(',', '.');
+      stok = parseFloat(valStr) || 0;
+      if (stok < 0) stok = 0; // Auto convert negative stock to 0
       shouldInclude = true;
     }
 
     if (shouldInclude && itemCode) {
-      stockMap.set(String(itemCode).trim(), stok);
+      // Defensively keep maximum stock value if item exists, but always ensure it's at least 0
+      const existingStok = stockMap.get(String(itemCode).trim()) || 0;
+      const finalVal = Math.max(existingStok, stok, 0);
+      stockMap.set(String(itemCode).trim(), finalVal);
     }
   }
 
@@ -196,13 +205,30 @@ export const processHalodocStock = (
         };
       }
 
-      const rawStock = stockMap.get(String(mapping.motherCode)) || 0;
+      // Defensively parse and sanitize rawStock
+      let rawStock = stockMap.get(String(mapping.motherCode));
+      if (rawStock === undefined || rawStock === null) {
+        rawStock = 0;
+      }
+      if (typeof rawStock === 'string') {
+        rawStock = parseFloat(rawStock) || 0;
+      }
+      if (rawStock < 0) {
+        rawStock = 0;
+      }
+
       // User requested division: "dibagi oleh QTY konversion"
-      const divisor = mapping.qtyConvertion || 1;
-      const convertedStock = Math.floor(rawStock / divisor);
+      const divisor = parseFloat(mapping.qtyConvertion) || 1;
+      let convertedStock = Math.floor(rawStock / divisor);
+      if (convertedStock < 0) {
+        convertedStock = 0;
+      }
       
       // Ambil 80% dari stok
-      const finalStock = Math.floor(convertedStock * 0.8);
+      let finalStock = Math.floor(convertedStock * 0.8);
+      if (finalStock < 0) {
+        finalStock = 0;
+      }
       
       return {
         ...row,
@@ -220,52 +246,4 @@ export const processHalodocStock = (
   return Papa.unparse(updatedData);
 };
 
-export const processTokopediaStock = (
-  csvContent: string,
-  inventory: InventoryData,
-  storeSelection: { colIndex: number; name?: string }
-): Uint8Array => {
-  const parsed = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
-  const data = parsed.data as any[];
-  const { halodocMap, stockMap } = getMappings(inventory, storeSelection);
 
-  const updatedData = data.map((row) => {
-    const sku = row['PRODUCT_SKU'];
-    if (!sku) return row;
-
-    const mapping = halodocMap.get(String(sku).trim());
-    if (mapping) {
-      if (String(mapping.hargaProduct).trim() !== 'Jual Approve') {
-        return {
-          ...row,
-          'INVENTORY_STOCK': 0
-        };
-      }
-
-      const rawStock = stockMap.get(String(mapping.motherCode)) || 0;
-      const divisor = mapping.qtyConvertion || 1;
-      const convertedStock = Math.floor(rawStock / divisor);
-      
-      // Ambil 80% dari stok
-      const finalStock = Math.floor(convertedStock * 0.8);
-      
-      return {
-        ...row,
-        'INVENTORY_STOCK': finalStock
-      };
-    }
-    
-    // Jika tidak ditemukan di mapping (Lookup gagal)
-    return {
-      ...row,
-      'INVENTORY_STOCK': 0
-    };
-  });
-
-  const worksheet = XLSX.utils.json_to_sheet(updatedData);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Stock Update');
-  
-  const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-  return new Uint8Array(excelBuffer);
-};

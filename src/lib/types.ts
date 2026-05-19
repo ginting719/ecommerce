@@ -1,4 +1,4 @@
-export type StoreType = 'halodoc' | 'tokopedia_tiktok';
+export type StoreType = 'halodoc';
 
 export interface Store {
   id: StoreType;
@@ -17,5 +17,4 @@ export interface StockLog {
 
 export const STORES: Store[] = [
   { id: 'halodoc', name: 'Halodoc', outputFormat: 'csv' },
-  { id: 'tokopedia_tiktok', name: 'Tokopedia & Tiktok', outputFormat: 'xlsx' },
 ];
