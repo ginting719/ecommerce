@@ -85,7 +85,7 @@ export default function StockAutomation() {
           : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
       });
       const url = URL.createObjectURL(blob);
-      const outputFileName = `UPDATE_STOK_${store?.name.replace(/ /g, '_')}_${new Date().getTime()}.${store?.outputFormat}`;
+      const outputFileName = `UPDATE_STOK_HARGA_${store?.name.replace(/ /g, '_')}_${new Date().getTime()}.${store?.outputFormat}`;
 
       // 5. Log activity
       await logToSpreadsheet({
@@ -101,7 +101,7 @@ export default function StockAutomation() {
         fileName: outputFileName
       });
       
-      toast.success(`Berhasil generate update stok untuk ${store?.name}`);
+      toast.success(`Berhasil generate update stok & harga untuk ${store?.name}`);
     } catch (error: any) {
       console.error('Processing error:', error);
       setResult({ success: false });
@@ -152,10 +152,10 @@ export default function StockAutomation() {
           System Online
         </motion.div>
         <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900">
-          Automation <span className="text-brand-600">Update Stok</span>
+          Automation <span className="text-brand-600">Update Stok & Harga</span>
         </h1>
         <p className="text-slate-500 text-lg max-w-xl mx-auto leading-relaxed">
-          Update stok Halodoc dari template asal platform terkait
+          Update stok &amp; harga Halodoc dari template asal platform terkait
         </p>
       </div>
 
@@ -387,7 +387,7 @@ export default function StockAutomation() {
                       {result.success ? "Processing Complete" : "Processing Failed"}
                     </p>
                     {result.success && (
-                      <p className="text-sm text-emerald-700/80 font-medium">Your marketplace-ready file is ready for download.</p>
+                      <p className="text-sm text-emerald-700/80 font-medium">Stok &amp; Harga sudah diupdate — file siap didownload.</p>
                     )}
                   </div>
                 </div>
@@ -418,7 +418,7 @@ export default function StockAutomation() {
               ) : (
                 <div className="flex items-center gap-3">
                   <RefreshCw className="h-5 w-5" />
-                  <span>Generate Update Stok</span>
+                  <span>Generate Update Stok &amp; Harga</span>
                 </div>
               )}
             </Button>

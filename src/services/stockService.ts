@@ -7,7 +7,7 @@ export interface InventoryData {
   log?: any[][];
 }
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzAWFww9sKMDMcKDD4DPGZRU5TVe5WAnpJJSi9kRfwu5ypG0Ts6d5xXyTmvSn9oL6LZ-A/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyxjcxRN9Qi5ZOha_zzwbOxP2rH98pkNAuyOo0-_r77RFx2KjnYZPGXI86DPXaVeO5BKg/exec";
 
 export const fetchInventoryData = async (retries = 12, delay = 2500): Promise<InventoryData> => {
   try {
@@ -126,7 +126,7 @@ export const getStoresFromStock = (stock: any[][]) => {
 };
 
 const getMappings = (inventory: InventoryData, storeSelection: { colIndex: number; name?: string }) => {
-  // 1. Mapping Halodoc: ID Jembatan -> { MotherCode, QtyConversion, HargaProduct }
+  // 1. Mapping Halodoc: ID Jembatan -> { MotherCode, QtyConversion, HargaProduct, HargaApprove }
   const halodocMap = new Map();
   for (let i = 1; i < inventory.halodoc.length; i++) {
     const row = inventory.halodoc[i];
@@ -134,8 +134,9 @@ const getMappings = (inventory: InventoryData, storeSelection: { colIndex: numbe
     const idJembatan = row[3]; // ID JEMBATAN (Col D)
     const hargaProduct = row[6]; // HARGA PRODUCT (Col G)
     const qtyConvertion = parseFloat(row[7]) || 1; // QTY CONVERTION (Col H)
+    const hargaApprove = row[8]; // HARGA APPROVE (Col I)
     if (idJembatan) {
-      halodocMap.set(String(idJembatan).trim(), { motherCode, qtyConvertion, hargaProduct });
+      halodocMap.set(String(idJembatan).trim(), { motherCode, qtyConvertion, hargaProduct, hargaApprove });
     }
   }
 
@@ -229,10 +230,15 @@ export const processHalodocStock = (
       if (finalStock < 0) {
         finalStock = 0;
       }
+
+      // Ambil HARGA APPROVE dari kolom I sheet HALODOC
+      const rawHarga = mapping.hargaApprove;
+      const parsedHarga = parseFloat(String(rawHarga || '').replace(/,/g, '')) || 0;
       
       return {
         ...row,
-        'INVENTORY_STOCK': finalStock
+        'INVENTORY_STOCK': finalStock,
+        'PRODUCT_PRICE': parsedHarga > 0 ? parsedHarga : row['PRODUCT_PRICE']
       };
     }
     
