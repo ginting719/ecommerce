@@ -8,7 +8,7 @@ import { Upload, FileText, CheckCircle2, AlertCircle, Download, Loader2, Refresh
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { fetchInventoryData, logToSpreadsheet, processHalodocStock, getStoresFromStock, InventoryData } from '@/src/services/stockService';
+import { fetchInventoryData, syncAllData, getStoresFromStock, clearAllCache, logToSpreadsheet, processHalodocStock, InventoryData } from '@/src/services/stockService';
 
 export default function StockAutomation() {
   const [selectedStore, setSelectedStore] = useState<StoreType | ''>('');
@@ -17,47 +17,61 @@ export default function StockAutomation() {
   const [isStoreOpen, setIsStoreOpen] = useState(false);
   const [availableStores, setAvailableStores] = useState<{name: string, colIndex: number}[]>([]);
   const [inventory, setInventory] = useState<InventoryData | null>(null);
-  const [isLoadingInventory, setIsLoadingInventory] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoadingFullData, setIsLoadingFullData] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<{ success: boolean; url?: string; fileName?: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Load & Sync semua data (Toko & Inventory) di awal
+  const loadStoreList = async (forceRefresh = false) => {
+    if (forceRefresh) {
+      clearAllCache();
+      setInventory(null);
+    }
+    setIsSyncing(true);
+    try {
+      const fullData = await syncAllData();
+      setInventory(fullData);
+      setAvailableStores(getStoresFromStock(fullData.stock));
+    } catch (e: any) {
+      console.error('Failed to sync data', e);
+      toast.error(e.message || 'Gagal melakukan sinkronisasi data dari Spreadsheet');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   useEffect(() => {
-    const loadInventory = async () => {
-      setIsLoadingInventory(true);
-      try {
-        const data = await fetchInventoryData();
-        setInventory(data);
-        const stores = getStoresFromStock(data.stock);
-        setAvailableStores(stores);
-      } catch (e: any) {
-        console.error('Failed to load stores', e);
-        toast.error(e.message || 'Gagal memuat data Toko dari Spreadsheet');
-      } finally {
-        setIsLoadingInventory(false);
-      }
-    };
-    loadInventory();
+    loadStoreList();
   }, []);
+
+  const validateAndSetFile = (selectedFile: File) => {
+    if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
+      toast.error('Gagal memuat: Hanya file dengan format .CSV yang diperbolehkan!');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    setFile(selectedFile);
+    setResult(null);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setResult(null);
+      validateAndSetFile(e.target.files[0]);
     }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
-      setResult(null);
+      validateAndSetFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleGenerate = async () => {
-    if (!selectedStore || !selectedStockCol || !file || !inventory) {
+    if (!selectedStore || !selectedStockCol || !file) {
       toast.error('Pilih Marketplace, Toko (Store), dan upload file terlebih dahulu');
       return;
     }
@@ -66,19 +80,29 @@ export default function StockAutomation() {
     setResult(null);
 
     try {
+      // Lazy-load full inventory hanya saat Generate diklik
+      let currentInventory = inventory;
+      if (!currentInventory) {
+        setIsLoadingFullData(true);
+        toast.info('Memuat data stok lengkap...');
+        currentInventory = await fetchInventoryData();
+        setInventory(currentInventory);
+        setIsLoadingFullData(false);
+      }
+
       const fileText = await file.text();
       
       let blobContent: any;
       const store = STORES.find(s => s.id === selectedStore);
       
-      // 3. Process based on store
+      // Process based on store
       if (selectedStore === 'halodoc') {
-        blobContent = processHalodocStock(fileText, inventory, selectedStockCol);
+        blobContent = processHalodocStock(fileText, currentInventory, selectedStockCol);
       } else {
         throw new Error('Store tidak dikenal');
       }
       
-      // 4. Create download URL
+      // Create download URL
       const blob = new Blob([blobContent], { 
         type: store?.outputFormat === 'csv' 
           ? 'text/csv' 
@@ -87,7 +111,7 @@ export default function StockAutomation() {
       const url = URL.createObjectURL(blob);
       const outputFileName = `UPDATE_STOK_HARGA_${store?.name.replace(/ /g, '_')}_${new Date().getTime()}.${store?.outputFormat}`;
 
-      // 5. Log activity
+      // Log activity
       await logToSpreadsheet({
         user: selectedStockCol.name,
         storeName: store?.name || 'Unknown',
@@ -105,6 +129,7 @@ export default function StockAutomation() {
     } catch (error: any) {
       console.error('Processing error:', error);
       setResult({ success: false });
+      setIsLoadingFullData(false);
       toast.error(error.message || 'Gagal memproses file. Silakan periksa konfigurasi Apps Script.');
       
       // Log failure
@@ -167,8 +192,8 @@ export default function StockAutomation() {
               <div className="flex items-center justify-between ml-1 h-5">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Marketplace Destination</label>
               </div>
-              <Select value={selectedStore} onValueChange={(val) => setSelectedStore(val as StoreType)}>
-                <SelectTrigger className="w-full h-[48px] bg-slate-50 border-slate-200 hover:border-brand-300 transition-colors rounded-xl">
+              <Select value={selectedStore} onValueChange={(val) => setSelectedStore(val as StoreType)} disabled={isSyncing}>
+                <SelectTrigger className="w-full h-[48px] bg-slate-50 border-slate-200 hover:border-brand-300 transition-colors rounded-xl disabled:opacity-50">
                   <SelectValue placeholder="Select destination..." />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-slate-200">
@@ -189,26 +214,13 @@ export default function StockAutomation() {
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Store (Toko)</label>
                 <button 
                   onClick={() => {
-                    const loadInventory = async () => {
-                      setIsLoadingInventory(true);
-                      try {
-                        const data = await fetchInventoryData();
-                        setInventory(data);
-                        const stores = getStoresFromStock(data.stock);
-                        setAvailableStores(stores);
-                        toast.success('Inventory refreshed');
-                      } catch (e: any) {
-                        toast.error(e.message || 'Gagal refresh data');
-                      } finally {
-                        setIsLoadingInventory(false);
-                      }
-                    };
-                    loadInventory();
+                    loadStoreList(true);
+                    toast.info('Menyinkronkan ulang seluruh data dari Spreadsheet...');
                   }}
-                  disabled={isLoadingInventory}
+                  disabled={isSyncing}
                   className="text-[10px] font-bold text-brand-600 hover:text-brand-700 uppercase tracking-widest flex items-center gap-1 disabled:opacity-50"
                 >
-                  <RefreshCw className={cn("h-3 w-3", isLoadingInventory && "animate-spin")} />
+                  <RefreshCw className={cn("h-3 w-3", isSyncing && "animate-spin")} />
                   Refresh
                 </button>
               </div>
@@ -218,9 +230,9 @@ export default function StockAutomation() {
                   variant="outline"
                   role="combobox"
                   aria-expanded={isStoreOpen}
-                  disabled={isLoadingInventory || availableStores.length === 0}
+                  disabled={isSyncing || availableStores.length === 0}
                   onClick={() => setIsStoreOpen(!isStoreOpen)}
-                  className="w-full h-[48px] bg-slate-50 border-slate-200 hover:border-brand-300 justify-between px-4 rounded-xl font-normal"
+                  className="w-full h-[48px] bg-slate-50 border-slate-200 hover:border-brand-300 justify-between px-4 rounded-xl font-normal disabled:opacity-50"
                 >
                   {selectedStockCol ? (
                     <div className="flex items-center gap-2 truncate">
@@ -228,7 +240,9 @@ export default function StockAutomation() {
                       <span className="font-semibold truncate">{selectedStockCol.name}</span>
                     </div>
                   ) : (
-                    <span className="text-slate-500">{isLoadingInventory ? "Loading stores..." : "Pilih Toko Sumber Stok..."}</span>
+                    <span className="text-slate-500">
+                    {isSyncing ? "Menyinkronkan data..." : "Pilih Toko Sumber Stok..."}
+                  </span>
                   )}
                   <RefreshCw className={cn("ml-2 h-4 w-4 shrink-0 opacity-50 transition-transform duration-200", isStoreOpen && "rotate-180")} />
                 </Button>
@@ -310,15 +324,15 @@ export default function StockAutomation() {
           </div>
 
           <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={handleDrop}
-            onClick={() => !isGenerating && fileInputRef.current?.click()}
+            onDragOver={(e) => { if(!isSyncing) e.preventDefault(); }}
+            onDrop={(e) => { if(!isSyncing) handleDrop(e); }}
+            onClick={() => !isGenerating && !isSyncing && fileInputRef.current?.click()}
             className={cn(
               "group relative border-2 border-dashed rounded-3xl p-12 transition-all duration-300 flex flex-col items-center justify-center gap-6",
               file 
                 ? "border-brand-400 bg-brand-50/30 shadow-inner" 
                 : "border-slate-200 hover:border-brand-400 hover:bg-slate-50/50",
-              isGenerating && "opacity-50 cursor-not-allowed"
+              (isGenerating || isSyncing) && "opacity-50 cursor-not-allowed pointer-events-none"
             )}
           >
             <input
@@ -326,7 +340,7 @@ export default function StockAutomation() {
               ref={fileInputRef}
               onChange={handleFileChange}
               className="hidden"
-              accept=".csv,.xlsx,.xls"
+              accept=".csv"
             />
             
             <div className={cn(
@@ -349,7 +363,7 @@ export default function StockAutomation() {
               ) : (
                 <div className="space-y-1">
                   <p className="text-lg font-bold text-slate-900">Drop source file here</p>
-                  <p className="text-sm text-slate-400 font-medium">Supports .csv, .xlsx, .xls templates</p>
+                  <p className="text-sm text-slate-400 font-medium">Supports .csv template only</p>
                 </div>
               )}
             </div>
@@ -407,10 +421,20 @@ export default function StockAutomation() {
           <div className="pt-4">
             <Button
               onClick={handleGenerate}
-              disabled={!file || !selectedStore || !selectedStockCol || isGenerating}
+              disabled={isSyncing || !file || !selectedStore || !selectedStockCol || isGenerating}
               className="w-full h-14 text-lg font-black bg-brand-600 hover:bg-brand-700 text-white shadow-[0_10px_30px_rgba(102,129,242,0.3)] rounded-2xl transition-all active:scale-[0.98] disabled:opacity-50 disabled:shadow-none"
             >
-              {isGenerating ? (
+              {isSyncing ? (
+                <div className="flex items-center gap-3">
+                  <RefreshCw className="h-5 w-5 animate-spin" />
+                  <span>Syncing...</span>
+                </div>
+              ) : isLoadingFullData ? (
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                  <span>Memuat Data Stok Lengkap...</span>
+                </div>
+              ) : isGenerating ? (
                 <div className="flex items-center gap-3">
                   <Loader2 className="h-6 w-6 animate-spin" />
                   <span>Executing Transformation...</span>

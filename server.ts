@@ -8,7 +8,7 @@ async function startServer() {
 
   app.use(express.json());
 
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzAWFww9sKMDMcKDD4DPGZRU5TVe5WAnpJJSi9kRfwu5ypG0Ts6d5xXyTmvSn9oL6LZ-A/exec";
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyXEgK-fC6PC0y-emyO7VRaODbhOzoZx5GtsNBFdKTKp7wFE2UNYBCFPoOyibDDPeDQ1w/exec";
 
   // API Proxy to Google Apps Script
   app.get("/api/inventory", async (req, res) => {

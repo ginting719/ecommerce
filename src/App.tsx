@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import StockAutomation from './components/StockAutomation';
 import AdminPanel from './components/AdminPanel';
+import VideoHelpWidget from './components/VideoHelpWidget';
 import { Button } from '@/components/ui/button';
 import { Lock, Unlock, LayoutDashboard, History, ChevronLeft, RefreshCw } from 'lucide-react';
 import { Toaster } from '@/components/ui/sonner';
@@ -174,6 +175,8 @@ export default function App() {
         </AnimatePresence>
       </main>
 
+      {/* Floating Video Help Widget */}
+      <VideoHelpWidget />
 
     </div>
   );

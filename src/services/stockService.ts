@@ -7,36 +7,56 @@ export interface InventoryData {
   log?: any[][];
 }
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyxjcxRN9Qi5ZOha_zzwbOxP2rH98pkNAuyOo0-_r77RFx2KjnYZPGXI86DPXaVeO5BKg/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPOT0uURqqSX-uWIOvmQ5NUXLZSkL0L9Gbaq55GdcDIqaSsSXZ0ZPCqxJR4LEGtpI7dw/exec";
 
-export const fetchInventoryData = async (retries = 12, delay = 2500): Promise<InventoryData> => {
-  try {
-    // Talk directly to Google Apps Script
-    const response = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8', // GAS sometimes prefers this for CORS
-      },
-      body: JSON.stringify({ action: "getData" }),
-      redirect: 'follow'
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP Error ${response.status}: Gagal mengambil data dari Google Sheets.`);
-    }
+// ─── Cache Config ────────────────────────────────────────────────────────────
+// localStorage caching dihapus karena Apps Script sudah dioptimasi dan proses fetch full data sangat cepat.
 
-    const data = await response.json();
-    
-    // Basic validation to ensure we have stock data
-    if (!data.stock || data.stock.length === 0) {
-      throw new Error('Data Stock tidak ditemukan atau kosong di Spreadsheet');
-    }
-    
-    return data;
-  } catch (error: any) {
-    console.error('fetchInventoryData final error:', error);
-    throw error;
+// ─── In-memory singleton untuk full inventory (valid 1 sesi) ─────────────────
+let _inventoryCache: InventoryData | null = null;
+let _inventoryFetchPromise: Promise<InventoryData> | null = null;
+
+export const syncAllData = async (): Promise<InventoryData> => {
+  if (_inventoryCache) return _inventoryCache;
+  if (_inventoryFetchPromise) return _inventoryFetchPromise;
+  
+  _inventoryFetchPromise = fetchInventoryDataInternal().catch(e => {
+    _inventoryFetchPromise = null;
+    throw e;
+  });
+  
+  return _inventoryFetchPromise;
+};
+
+// ─── Internal fetch inventory ─────────────────────────────────────────────────
+async function fetchInventoryDataInternal(): Promise<InventoryData> {
+  const response = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action: 'getData' }),
+    redirect: 'follow'
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: Gagal ambil data dari Google Sheets.`);
+  const data = await response.json();
+  if (!data.stock || data.stock.length === 0) {
+    throw new Error('Data Stock tidak ditemukan atau kosong di Spreadsheet');
   }
+  _inventoryCache = data;
+  _inventoryFetchPromise = null;
+  return data;
+}
+
+/**
+ * fetchInventoryData — Menggunakan cache memory jika sudah ada.
+ */
+export const fetchInventoryData = async (): Promise<InventoryData> => {
+  return syncAllData();
+};
+
+/** Hapus semua cache (saat user klik Refresh) */
+export const clearAllCache = () => {
+  _inventoryCache = null;
+  _inventoryFetchPromise = null;
 };
 
 export const fetchLogs = async () => {
