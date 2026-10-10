@@ -10,7 +10,7 @@ async function startServer() {
 
   // URL deployment Apps Script yang aktif (versi "Optimized Payload Mode").
   // Bisa dioverride lewat environment variable APPS_SCRIPT_URL.
-  const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyWisR6e80s32zROHqUAP2sIGaFDvgWYUO090s5E0s5n7meQYrt3jeIH-PdcnkQk7m8AA/exec";
+  const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwHAEXD266ez3egYRElLQ_F3a8An5WaFXY2NEsyKLKO2jey10rq-5AhPgz3IcpepFh_rg/exec";
 
   // API Proxy to Google Apps Script
   app.get("/api/inventory", async (req, res) => {
@@ -34,7 +34,7 @@ async function startServer() {
             "Content-Type": "application/json",
             "Accept": "application/json"
           },
-          body: JSON.stringify({ action: "getData" }),
+          body: JSON.stringify({ action: "getData", ...(req.query.store ? { store: req.query.store } : {}) }),
           signal: controller.signal,
           redirect: "follow"
         });
@@ -98,7 +98,7 @@ async function startServer() {
       const response = await fetch(APPS_SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8", "Accept": "application/json" },
-        body: JSON.stringify({ action: "getStoreNames" }),
+        body: JSON.stringify({ action: "getStoreNames", ...(req.query.nocache ? { nocache: true } : {}) }),
         redirect: "follow"
       });
 

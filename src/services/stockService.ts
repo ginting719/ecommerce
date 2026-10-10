@@ -9,7 +9,7 @@ export interface InventoryData {
 
 // URL deployment Apps Script yang aktif. Dipakai langsung saat app di-build
 // statis (mis. GitHub Pages) yang tidak menjalankan server Node.
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWisR6e80s32zROHqUAP2sIGaFDvgWYUO090s5E0s5n7meQYrt3jeIH-PdcnkQk7m8AA/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHAEXD266ez3egYRElLQ_F3a8An5WaFXY2NEsyKLKO2jey10rq-5AhPgz3IcpepFh_rg/exec";
 
 // Saat development (npm run dev) request lewat proxy server.ts agar tidak
 // bergantung pada redirect/CORS Apps Script.
@@ -23,9 +23,9 @@ const ENDPOINTS = {
 // ─── Cache Config ────────────────────────────────────────────────────────────
 // localStorage caching dihapus karena Apps Script sudah dioptimasi dan proses fetch full data sangat cepat.
 
-// ─── In-memory singleton untuk full inventory (valid 1 sesi) ─────────────────
-let _inventoryCache: InventoryData | null = null;
-let _inventoryFetchPromise: Promise<InventoryData> | null = null;
+// ─── In-memory cache inventory (per toko, valid 1 sesi) ──────────────────────
+const _inventoryCache = new Map<string, InventoryData>();
+const _inventoryFetch = new Map<string, Promise<InventoryData>>();
 
 /**
  * Pastikan response benar-benar JSON. Kalau server mengembalikan HTML/teks
@@ -54,64 +54,70 @@ async function readJsonResponse(response: Response): Promise<any> {
  * Ambil data JSON dari Apps Script. Di development lewat proxy server.ts;
  * kalau tidak (hasil build statis / GitHub Pages) langsung ke Apps Script.
  */
-async function fetchJson(action: string, proxyPath: string): Promise<any> {
+async function fetchJson(action: string, proxyPath: string, params?: Record<string, any>): Promise<any> {
   if (import.meta.env.DEV) {
-    return readJsonResponse(await fetch(proxyPath, { method: 'GET' }));
+    const query = params
+      ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()
+      : '';
+    return readJsonResponse(await fetch(proxyPath + query, { method: 'GET' }));
   }
   return readJsonResponse(
     await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, ...(params || {}) }),
       redirect: 'follow',
     })
   );
 }
 
-export const syncAllData = async (): Promise<InventoryData> => {
-  if (_inventoryCache) return _inventoryCache;
-  if (_inventoryFetchPromise) return _inventoryFetchPromise;
-  
-  _inventoryFetchPromise = fetchInventoryDataInternal().catch(e => {
-    _inventoryFetchPromise = null;
-    throw e;
-  });
-  
-  return _inventoryFetchPromise;
-};
-
-// ─── Internal fetch inventory ─────────────────────────────────────────────────
-async function fetchInventoryDataInternal(): Promise<InventoryData> {
-  const data = await fetchJson('getData', ENDPOINTS.inventory);
+// ─── Internal fetch inventory (opsional difilter per toko) ────────────────────
+async function fetchInventoryDataInternal(store?: string): Promise<InventoryData> {
+  const data = await fetchJson('getData', ENDPOINTS.inventory, store ? { store } : undefined);
   if (!data.stock || data.stock.length === 0) {
     throw new Error('Data Stock tidak ditemukan atau kosong di Spreadsheet');
   }
-  _inventoryCache = data;
-  _inventoryFetchPromise = null;
   return data;
 }
 
 /**
- * fetchInventoryData — Menggunakan cache memory jika sudah ada.
+ * fetchInventoryData — Ambil data stock & halodoc. Kalau `store` diisi, hanya
+ * baris milik toko itu yang diambil (payload jauh lebih kecil & cepat).
+ * Hasil di-cache per toko selama sesi berjalan.
  */
-export const fetchInventoryData = async (): Promise<InventoryData> => {
-  return syncAllData();
+export const fetchInventoryData = async (store?: string): Promise<InventoryData> => {
+  const key = store || '__all__';
+  const cached = _inventoryCache.get(key);
+  if (cached) return cached;
+
+  const inflight = _inventoryFetch.get(key);
+  if (inflight) return inflight;
+
+  const request = fetchInventoryDataInternal(store)
+    .then((data) => {
+      _inventoryCache.set(key, data);
+      return data;
+    })
+    .finally(() => _inventoryFetch.delete(key));
+
+  _inventoryFetch.set(key, request);
+  return request;
 };
 
 /**
- * fetchStoreList — Hanya mengambil daftar nama toko (payload kecil & cepat),
- * dipakai untuk mengisi dropdown di layar utama tanpa menarik full stock.
+ * fetchStoreList — Hanya mengambil daftar nama toko (dipakai untuk dropdown di
+ * layar utama tanpa menarik full stock).
  */
-export const fetchStoreList = async (): Promise<{ name: string; colIndex: number }[]> => {
-  const data = await fetchJson('getStoreNames', ENDPOINTS.stores);
+export const fetchStoreList = async (refresh = false): Promise<{ name: string; colIndex: number }[]> => {
+  const data = await fetchJson('getStoreNames', ENDPOINTS.stores, refresh ? { nocache: true } : undefined);
   const names: string[] = Array.isArray(data.stores) ? data.stores : [];
   return names.map((name) => ({ name, colIndex: -1 }));
 };
 
 /** Hapus semua cache (saat user klik Refresh) */
 export const clearAllCache = () => {
-  _inventoryCache = null;
-  _inventoryFetchPromise = null;
+  _inventoryCache.clear();
+  _inventoryFetch.clear();
 };
 
 export const fetchLogs = async () => {

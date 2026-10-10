@@ -8,7 +8,7 @@ import { Upload, FileText, CheckCircle2, AlertCircle, Download, Loader2, Refresh
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { fetchInventoryData, fetchStoreList, clearAllCache, logToSpreadsheet, processHalodocStock, InventoryData } from '@/src/services/stockService';
+import { fetchInventoryData, fetchStoreList, clearAllCache, logToSpreadsheet, processHalodocStock } from '@/src/services/stockService';
 
 export default function StockAutomation() {
   const [selectedStore, setSelectedStore] = useState<StoreType | ''>('');
@@ -16,7 +16,6 @@ export default function StockAutomation() {
   const [storeSearch, setStoreSearch] = useState('');
   const [isStoreOpen, setIsStoreOpen] = useState(false);
   const [availableStores, setAvailableStores] = useState<{name: string, colIndex: number}[]>([]);
-  const [inventory, setInventory] = useState<InventoryData | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoadingFullData, setIsLoadingFullData] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -24,15 +23,14 @@ export default function StockAutomation() {
   const [result, setResult] = useState<{ success: boolean; url?: string; fileName?: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load daftar toko (payload ringan) di awal; full stock diambil saat Generate.
+  // Load daftar toko (payload ringan) di awal; data stok diambil saat Generate.
   const loadStoreList = async (forceRefresh = false) => {
     if (forceRefresh) {
       clearAllCache();
-      setInventory(null);
     }
     setIsSyncing(true);
     try {
-      const stores = await fetchStoreList();
+      const stores = await fetchStoreList(forceRefresh);
       setAvailableStores(stores);
     } catch (e: any) {
       console.error('Failed to sync data', e);
@@ -79,15 +77,11 @@ export default function StockAutomation() {
     setResult(null);
 
     try {
-      // Lazy-load full inventory hanya saat Generate diklik
-      let currentInventory = inventory;
-      if (!currentInventory) {
-        setIsLoadingFullData(true);
-        toast.info('Memuat data stok lengkap...');
-        currentInventory = await fetchInventoryData();
-        setInventory(currentInventory);
-        setIsLoadingFullData(false);
-      }
+      // Ambil data stok hanya untuk toko yang dipilih (payload jauh lebih kecil)
+      setIsLoadingFullData(true);
+      toast.info('Memuat data stok toko...');
+      const currentInventory = await fetchInventoryData(selectedStockCol.name);
+      setIsLoadingFullData(false);
 
       const fileText = await file.text();
       
