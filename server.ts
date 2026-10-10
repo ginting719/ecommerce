@@ -8,7 +8,9 @@ async function startServer() {
 
   app.use(express.json());
 
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyXEgK-fC6PC0y-emyO7VRaODbhOzoZx5GtsNBFdKTKp7wFE2UNYBCFPoOyibDDPeDQ1w/exec";
+  // URL deployment Apps Script yang aktif (versi "Optimized Payload Mode").
+  // Bisa dioverride lewat environment variable APPS_SCRIPT_URL.
+  const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyWisR6e80s32zROHqUAP2sIGaFDvgWYUO090s5E0s5n7meQYrt3jeIH-PdcnkQk7m8AA/exec";
 
   // API Proxy to Google Apps Script
   app.get("/api/inventory", async (req, res) => {
@@ -87,6 +89,42 @@ async function startServer() {
         error: "Gagal terhubung ke Google Sheets.",
         details: error.message
       });
+    }
+  });
+
+  // Proxy ringan: hanya daftar nama toko (payload kecil, tidak perlu tarik full stock)
+  app.get("/api/stores", async (req, res) => {
+    try {
+      const response = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8", "Accept": "application/json" },
+        body: JSON.stringify({ action: "getStoreNames" }),
+        redirect: "follow"
+      });
+
+      const text = await response.text();
+
+      if (text.includes("<!doctype") || text.includes("<html")) {
+        return res.status(500).json({
+          error: "Apps Script mengembalikan HTML.",
+          details: "Pastikan Web App di-deploy sebagai Web App dengan akses 'Anyone'."
+        });
+      }
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return res.status(500).json({
+          error: "Format data dari Apps Script tidak valid.",
+          details: text.substring(0, 100)
+        });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error("Stores proxy error:", error.message);
+      res.status(500).json({ error: "Gagal mengambil daftar toko.", details: error.message });
     }
   });
 

@@ -7,7 +7,18 @@ export interface InventoryData {
   log?: any[][];
 }
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPOT0uURqqSX-uWIOvmQ5NUXLZSkL0L9Gbaq55GdcDIqaSsSXZ0ZPCqxJR4LEGtpI7dw/exec";
+// URL deployment Apps Script yang aktif. Dipakai langsung saat app di-build
+// statis (mis. GitHub Pages) yang tidak menjalankan server Node.
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWisR6e80s32zROHqUAP2sIGaFDvgWYUO090s5E0s5n7meQYrt3jeIH-PdcnkQk7m8AA/exec";
+
+// Saat development (npm run dev) request lewat proxy server.ts agar tidak
+// bergantung pada redirect/CORS Apps Script.
+const ENDPOINTS = {
+  inventory: '/api/inventory',
+  stores: '/api/stores',
+  logs: '/api/logs',
+  log: '/api/log',
+};
 
 // ─── Cache Config ────────────────────────────────────────────────────────────
 // localStorage caching dihapus karena Apps Script sudah dioptimasi dan proses fetch full data sangat cepat.
@@ -15,6 +26,47 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPOT0uURqqSX-u
 // ─── In-memory singleton untuk full inventory (valid 1 sesi) ─────────────────
 let _inventoryCache: InventoryData | null = null;
 let _inventoryFetchPromise: Promise<InventoryData> | null = null;
+
+/**
+ * Pastikan response benar-benar JSON. Kalau server mengembalikan HTML/teks
+ * (misal route tidak ketemu atau Apps Script bermasalah), tampilkan pesan yang
+ * jelas daripada error "Unexpected token ... is not valid JSON".
+ */
+async function readJsonResponse(response: Response): Promise<any> {
+  const text = await response.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Server tidak mengembalikan JSON (HTTP ${response.status}). ` +
+        `Kemungkinan proxy API belum aktif atau Apps Script bermasalah.`
+    );
+  }
+  if (!response.ok) {
+    const detail = data?.details ? ` — ${data.details}` : '';
+    throw new Error(`${data?.error || `HTTP ${response.status}`}${detail}`);
+  }
+  return data;
+}
+
+/**
+ * Ambil data JSON dari Apps Script. Di development lewat proxy server.ts;
+ * kalau tidak (hasil build statis / GitHub Pages) langsung ke Apps Script.
+ */
+async function fetchJson(action: string, proxyPath: string): Promise<any> {
+  if (import.meta.env.DEV) {
+    return readJsonResponse(await fetch(proxyPath, { method: 'GET' }));
+  }
+  return readJsonResponse(
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action }),
+      redirect: 'follow',
+    })
+  );
+}
 
 export const syncAllData = async (): Promise<InventoryData> => {
   if (_inventoryCache) return _inventoryCache;
@@ -30,14 +82,7 @@ export const syncAllData = async (): Promise<InventoryData> => {
 
 // ─── Internal fetch inventory ─────────────────────────────────────────────────
 async function fetchInventoryDataInternal(): Promise<InventoryData> {
-  const response = await fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: 'getData' }),
-    redirect: 'follow'
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}: Gagal ambil data dari Google Sheets.`);
-  const data = await response.json();
+  const data = await fetchJson('getData', ENDPOINTS.inventory);
   if (!data.stock || data.stock.length === 0) {
     throw new Error('Data Stock tidak ditemukan atau kosong di Spreadsheet');
   }
@@ -53,6 +98,16 @@ export const fetchInventoryData = async (): Promise<InventoryData> => {
   return syncAllData();
 };
 
+/**
+ * fetchStoreList — Hanya mengambil daftar nama toko (payload kecil & cepat),
+ * dipakai untuk mengisi dropdown di layar utama tanpa menarik full stock.
+ */
+export const fetchStoreList = async (): Promise<{ name: string; colIndex: number }[]> => {
+  const data = await fetchJson('getStoreNames', ENDPOINTS.stores);
+  const names: string[] = Array.isArray(data.stores) ? data.stores : [];
+  return names.map((name) => ({ name, colIndex: -1 }));
+};
+
 /** Hapus semua cache (saat user klik Refresh) */
 export const clearAllCache = () => {
   _inventoryCache = null;
@@ -61,18 +116,7 @@ export const clearAllCache = () => {
 
 export const fetchLogs = async () => {
   try {
-    const response = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: JSON.stringify({ action: "getLogs" }),
-      redirect: 'follow'
-    });
-    
-    if (!response.ok) throw new Error('Gagal memuat log');
-    
-    const data = await response.json();
+    const data = await fetchJson('getLogs', ENDPOINTS.logs);
     console.log('Raw logs data received:', data);
     
     if (!data.log || data.log.length < 2) {
@@ -105,17 +149,20 @@ export const fetchLogs = async () => {
 
 export const logToSpreadsheet = async (log: any) => {
   try {
-    await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: JSON.stringify({
-        action: 'addLog',
-        log: log
-      }),
-      redirect: 'follow'
-    });
+    if (import.meta.env.DEV) {
+      await fetch(ENDPOINTS.log, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'addLog', log }),
+      });
+    } else {
+      await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'addLog', log }),
+        redirect: 'follow',
+      });
+    }
   } catch (e) {
     console.error('Failed to log to spreadsheet', e);
   }

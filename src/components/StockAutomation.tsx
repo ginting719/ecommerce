@@ -8,7 +8,7 @@ import { Upload, FileText, CheckCircle2, AlertCircle, Download, Loader2, Refresh
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { fetchInventoryData, syncAllData, getStoresFromStock, clearAllCache, logToSpreadsheet, processHalodocStock, InventoryData } from '@/src/services/stockService';
+import { fetchInventoryData, fetchStoreList, clearAllCache, logToSpreadsheet, processHalodocStock, InventoryData } from '@/src/services/stockService';
 
 export default function StockAutomation() {
   const [selectedStore, setSelectedStore] = useState<StoreType | ''>('');
@@ -24,7 +24,7 @@ export default function StockAutomation() {
   const [result, setResult] = useState<{ success: boolean; url?: string; fileName?: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load & Sync semua data (Toko & Inventory) di awal
+  // Load daftar toko (payload ringan) di awal; full stock diambil saat Generate.
   const loadStoreList = async (forceRefresh = false) => {
     if (forceRefresh) {
       clearAllCache();
@@ -32,9 +32,8 @@ export default function StockAutomation() {
     }
     setIsSyncing(true);
     try {
-      const fullData = await syncAllData();
-      setInventory(fullData);
-      setAvailableStores(getStoresFromStock(fullData.stock));
+      const stores = await fetchStoreList();
+      setAvailableStores(stores);
     } catch (e: any) {
       console.error('Failed to sync data', e);
       toast.error(e.message || 'Gagal melakukan sinkronisasi data dari Spreadsheet');
