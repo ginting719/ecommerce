@@ -9,7 +9,7 @@ export interface InventoryData {
 
 // URL deployment Apps Script yang aktif. Dipakai langsung saat app di-build
 // statis (mis. GitHub Pages) yang tidak menjalankan server Node.
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHAEXD266ez3egYRElLQ_F3a8An5WaFXY2NEsyKLKO2jey10rq-5AhPgz3IcpepFh_rg/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz6fRPs3GbDc1IxxOKyrVXC7wDYm8EGbPXTRIgvRm8HrVOwQwQzvFkO8xoKS72-MFVc9A/exec";
 
 // Saat development (npm run dev) request lewat proxy server.ts agar tidak
 // bergantung pada redirect/CORS Apps Script.

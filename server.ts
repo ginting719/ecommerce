@@ -10,7 +10,7 @@ async function startServer() {
 
   // URL deployment Apps Script yang aktif (versi "Optimized Payload Mode").
   // Bisa dioverride lewat environment variable APPS_SCRIPT_URL.
-  const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwHAEXD266ez3egYRElLQ_F3a8An5WaFXY2NEsyKLKO2jey10rq-5AhPgz3IcpepFh_rg/exec";
+  const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbz6fRPs3GbDc1IxxOKyrVXC7wDYm8EGbPXTRIgvRm8HrVOwQwQzvFkO8xoKS72-MFVc9A/exec";
 
   // API Proxy to Google Apps Script
   app.get("/api/inventory", async (req, res) => {
