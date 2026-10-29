@@ -298,8 +298,8 @@ export const processHalodocStock = (
         convertedStock = 0;
       }
       
-      // Ambil 80% dari stok
-      let finalStock = Math.floor(convertedStock * 0.8);
+      // Ambil 85% dari stok
+      let finalStock = Math.floor(convertedStock * 0.85);
       if (finalStock < 0) {
         finalStock = 0;
       }
